@@ -56,6 +56,22 @@ SYMBOL_TO_ID = {
 }
 
 
+@app.get("/")
+async def root():
+    """API overview"""
+    return {
+        "name": "CoinGecko Wrapper",
+        "description": "Cryptocurrency prices, historical data, and trending coins from CoinGecko",
+        "endpoints": [
+            {"path": "/price?symbol=BTC", "description": "Get current crypto price"},
+            {"path": "/history?symbol=BTC&days=30", "description": "Get historical price data"},
+            {"path": "/trending", "description": "Get trending coins"},
+            {"path": "/health", "description": "Health check"}
+        ],
+        "supported_symbols": sorted(SYMBOL_TO_ID.keys())
+    }
+
+
 @app.get("/health")
 async def health():
     """Health check endpoint"""
