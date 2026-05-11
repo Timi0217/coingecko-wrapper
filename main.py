@@ -66,7 +66,7 @@ HOME_HTML = """<!DOCTYPE html>
 body{background:#0a0a0a;color:#e0e0e0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;display:flex;justify-content:center;padding:32px 16px}
 .w{max-width:640px;width:100%;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:16px;padding:32px;height:fit-content}
 .hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
-.t{font-family:'Courier New',monospace;font-style:italic;font-size:28px;font-weight:700;color:#8DC63F}
+.t{font-family:'Courier New',monospace;font-size:28px;font-weight:700;color:#8DC63F}
 .st{font-family:'Courier New',monospace;font-size:13px;color:#555;display:flex;align-items:center;gap:6px}
 .st .d{width:8px;height:8px;border-radius:50%;background:#555;transition:background .3s}
 .st .d.on{background:#4CAF50}
