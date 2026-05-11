@@ -127,17 +127,19 @@ async function init(){
  // Prices
  const grid=document.getElementById('grid');
  const syms=Object.keys(COINS);
- const results=await Promise.allSettled(syms.map(s=>fetch('/price?symbol='+s).then(r=>r.json())));
- results.forEach((r,i)=>{
-  const s=syms[i],c=COINS[s];
-  const card=document.createElement('div');card.className='pc';
-  if(r.status==='fulfilled'){const d=r.value;card.innerHTML='<div class="ci" style="background:'+c.bg+'">'+c.icon+'</div><div class="cn"><div class="nm">'+c.name+'</div><div class="sy">'+s+'</div></div><div class="cr"><div class="pr">'+fmt(d.price)+'</div>'+chg(d.change_24h_pct)+'</div>'}
-  else{card.innerHTML='<div class="ci" style="background:'+c.bg+'">'+c.icon+'</div><div class="cn"><div class="nm">'+c.name+'</div><div class="sy">'+s+'</div></div><div class="cr"><div class="pr ld">--</div></div>'}
-  grid.appendChild(card)
- });
- // Trending
+ // Batch: single API call for all coins
+ try{const bp=await fetch('/prices?symbols='+syms.join(',')).then(r=>r.json());
+  const prices=bp.prices||{};
+  syms.forEach(s=>{const c=COINS[s];const card=document.createElement('div');card.className='pc';const d=prices[s];
+   if(d){card.innerHTML='<div class="ci" style="background:'+c.bg+'">'+c.icon+'</div><div class="cn"><div class="nm">'+c.name+'</div><div class="sy">'+s+'</div></div><div class="cr"><div class="pr">'+fmt(d.price)+'</div>'+chg(d.change_24h_pct)+'</div>'}
+   else{card.innerHTML='<div class="ci" style="background:'+c.bg+'">'+c.icon+'</div><div class="cn"><div class="nm">'+c.name+'</div><div class="sy">'+s+'</div></div><div class="cr"><div class="pr ld">--</div></div>'}
+   grid.appendChild(card)});
+ }catch(e){syms.forEach(s=>{const c=COINS[s];const card=document.createElement('div');card.className='pc';card.innerHTML='<div class="ci" style="background:'+c.bg+'">'+c.icon+'</div><div class="cn"><div class="nm">'+c.name+'</div><div class="sy">'+s+'</div></div><div class="cr"><div class="pr ld">--</div></div>';grid.appendChild(card)})}
+ // Trending (after prices to avoid rate limit)
+ await new Promise(r=>setTimeout(r,1200));
  try{const t=await fetch('/trending').then(r=>r.json());const coins=t.trending||[];if(coins.length){const sec=document.getElementById('tsec');sec.style.display='';const list=document.getElementById('tlist');coins.slice(0,4).forEach(c=>{const row=document.createElement('div');row.className='tr';const ch=c.change_24h_pct;const chStr=ch!=null?chg(ch):'<span class="ch" style="color:#666">#'+(c.market_cap_rank||'--')+'</span>';row.innerHTML='<span class="nm">'+c.name+'</span>'+chStr;list.appendChild(row)})}}catch(e){}
- // Global / dominance
+ // Global / dominance (staggered)
+ await new Promise(r=>setTimeout(r,1200));
  try{const g=await fetch('/global').then(r=>r.json());if(g.btc_dominance){const sec=document.getElementById('dsec');sec.style.display='';const pct=g.btc_dominance.toFixed(1);document.getElementById('dval').textContent=pct+'%';setTimeout(()=>{document.getElementById('dfill').style.width=pct+'%'},100)}}catch(e){}
 }
 function ts(s){document.getElementById('sym').value=s;fetchP()}
@@ -221,6 +223,62 @@ async def get_price(symbol: str):
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
 
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                raise HTTPException(status_code=429, detail="Rate limit exceeded")
+            raise HTTPException(status_code=503, detail="CoinGecko API error")
+        except httpx.RequestError:
+            raise HTTPException(status_code=503, detail="Network error connecting to CoinGecko")
+
+
+@app.get("/prices")
+async def get_prices(symbols: str = "BTC,ETH,SOL"):
+    """
+    Get prices for multiple symbols in a single CoinGecko API call.
+    Example: /prices?symbols=BTC,ETH,SOL,DOGE
+    """
+    symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+    coin_ids = []
+    valid_symbols = []
+    for sym in symbol_list:
+        if sym in SYMBOL_TO_ID:
+            coin_ids.append(SYMBOL_TO_ID[sym])
+            valid_symbols.append(sym)
+
+    if not coin_ids:
+        return {"prices": {}, "timestamp": datetime.now(timezone.utc).isoformat()}
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(
+                f"{COINGECKO_BASE_URL}/simple/price",
+                params={
+                    "ids": ",".join(coin_ids),
+                    "vs_currencies": "usd",
+                    "include_24hr_change": "true",
+                    "include_market_cap": "true",
+                    "include_24hr_vol": "true",
+                },
+            )
+            if response.status_code == 429:
+                raise HTTPException(status_code=429, detail="Rate limit exceeded")
+            response.raise_for_status()
+            data = response.json()
+
+            prices = {}
+            for sym in valid_symbols:
+                coin_id = SYMBOL_TO_ID[sym]
+                if coin_id in data:
+                    cd = data[coin_id]
+                    prices[sym] = {
+                        "symbol": sym,
+                        "price": cd.get("usd"),
+                        "change_24h_pct": cd.get("usd_24h_change"),
+                        "market_cap": cd.get("usd_market_cap"),
+                        "volume_24h": cd.get("usd_24h_vol"),
+                    }
+
+            return {"prices": prices, "timestamp": datetime.now(timezone.utc).isoformat()}
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 429:
                 raise HTTPException(status_code=429, detail="Rate limit exceeded")
