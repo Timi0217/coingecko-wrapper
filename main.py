@@ -124,23 +124,20 @@ async function init(){
  const t0=Date.now();
  // Health
  try{await fetch('/health');const ms=Date.now()-t0;document.getElementById('dot').classList.add('on');document.getElementById('stx').textContent='online \\u00B7 '+ms+'ms'}catch(e){document.getElementById('stx').textContent='offline'}
- // Prices
+ // All homepage data in one server-side call
  const grid=document.getElementById('grid');
  const syms=Object.keys(COINS);
- // Batch: single API call for all coins
- try{const bp=await fetch('/prices?symbols='+syms.join(',')).then(r=>r.json());
-  const prices=bp.prices||{};
+ try{const dash=await fetch('/dashboard').then(r=>r.json());
+  const prices=dash.prices||{};
   syms.forEach(s=>{const c=COINS[s];const card=document.createElement('div');card.className='pc';const d=prices[s];
    if(d){card.innerHTML='<div class="ci" style="background:'+c.bg+'">'+c.icon+'</div><div class="cn"><div class="nm">'+c.name+'</div><div class="sy">'+s+'</div></div><div class="cr"><div class="pr">'+fmt(d.price)+'</div>'+chg(d.change_24h_pct)+'</div>'}
    else{card.innerHTML='<div class="ci" style="background:'+c.bg+'">'+c.icon+'</div><div class="cn"><div class="nm">'+c.name+'</div><div class="sy">'+s+'</div></div><div class="cr"><div class="pr ld">--</div></div>'}
    grid.appendChild(card)});
+  // Trending
+  const coins=dash.trending||[];if(coins.length){const sec=document.getElementById('tsec');sec.style.display='';const list=document.getElementById('tlist');coins.forEach(c=>{const row=document.createElement('div');row.className='tr';const ch=c.change_24h_pct;const chStr=ch!=null?chg(ch):'<span class="ch" style="color:#666">#'+(c.market_cap_rank||'--')+'</span>';row.innerHTML='<span class="nm">'+c.name+'</span>'+chStr;list.appendChild(row)})}
+  // BTC dominance
+  if(dash.btc_dominance){const sec=document.getElementById('dsec');sec.style.display='';const pct=dash.btc_dominance.toFixed(1);document.getElementById('dval').textContent=pct+'%';setTimeout(()=>{document.getElementById('dfill').style.width=pct+'%'},100)}
  }catch(e){syms.forEach(s=>{const c=COINS[s];const card=document.createElement('div');card.className='pc';card.innerHTML='<div class="ci" style="background:'+c.bg+'">'+c.icon+'</div><div class="cn"><div class="nm">'+c.name+'</div><div class="sy">'+s+'</div></div><div class="cr"><div class="pr ld">--</div></div>';grid.appendChild(card)})}
- // Trending (after prices to avoid rate limit)
- await new Promise(r=>setTimeout(r,1200));
- try{const t=await fetch('/trending').then(r=>r.json());const coins=t.trending||[];if(coins.length){const sec=document.getElementById('tsec');sec.style.display='';const list=document.getElementById('tlist');coins.slice(0,4).forEach(c=>{const row=document.createElement('div');row.className='tr';const ch=c.change_24h_pct;const chStr=ch!=null?chg(ch):'<span class="ch" style="color:#666">#'+(c.market_cap_rank||'--')+'</span>';row.innerHTML='<span class="nm">'+c.name+'</span>'+chStr;list.appendChild(row)})}}catch(e){}
- // Global / dominance (staggered)
- await new Promise(r=>setTimeout(r,1200));
- try{const g=await fetch('/global').then(r=>r.json());if(g.btc_dominance){const sec=document.getElementById('dsec');sec.style.display='';const pct=g.btc_dominance.toFixed(1);document.getElementById('dval').textContent=pct+'%';setTimeout(()=>{document.getElementById('dfill').style.width=pct+'%'},100)}}catch(e){}
 }
 function ts(s){document.getElementById('sym').value=s;fetchP()}
 async function fetchP(){
@@ -229,6 +226,77 @@ async def get_price(symbol: str):
             raise HTTPException(status_code=503, detail="CoinGecko API error")
         except httpx.RequestError:
             raise HTTPException(status_code=503, detail="Network error connecting to CoinGecko")
+
+
+@app.get("/dashboard")
+async def get_dashboard():
+    """
+    Single endpoint for homepage data: prices for BTC/ETH/SOL/DOGE, trending, and global stats.
+    Makes sequential upstream calls with delays to respect CoinGecko rate limits.
+    """
+    result = {"prices": {}, "trending": [], "btc_dominance": None}
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        # 1) Batch prices — single call for all 4 coins
+        try:
+            ids = "bitcoin,ethereum,solana,dogecoin"
+            resp = await client.get(
+                f"{COINGECKO_BASE_URL}/simple/price",
+                params={
+                    "ids": ids,
+                    "vs_currencies": "usd",
+                    "include_24hr_change": "true",
+                    "include_market_cap": "true",
+                    "include_24hr_vol": "true",
+                },
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                mapping = {"bitcoin": "BTC", "ethereum": "ETH", "solana": "SOL", "dogecoin": "DOGE"}
+                for cg_id, sym in mapping.items():
+                    if cg_id in data:
+                        cd = data[cg_id]
+                        result["prices"][sym] = {
+                            "price": cd.get("usd"),
+                            "change_24h_pct": cd.get("usd_24h_change"),
+                            "market_cap": cd.get("usd_market_cap"),
+                            "volume_24h": cd.get("usd_24h_vol"),
+                        }
+        except Exception:
+            pass
+
+        # 2) Trending — with delay
+        import asyncio
+        await asyncio.sleep(1.5)
+        try:
+            resp = await client.get(f"{COINGECKO_BASE_URL}/search/trending")
+            if resp.status_code == 200:
+                coins = resp.json().get("coins", [])
+                for item in coins[:4]:
+                    coin = item.get("item", {})
+                    coin_data = coin.get("data", {})
+                    change_24h = coin_data.get("price_change_percentage_24h", {})
+                    change_usd = change_24h.get("usd") if isinstance(change_24h, dict) else change_24h
+                    result["trending"].append({
+                        "name": coin.get("name"),
+                        "symbol": coin.get("symbol"),
+                        "market_cap_rank": coin.get("market_cap_rank"),
+                        "change_24h_pct": change_usd,
+                    })
+        except Exception:
+            pass
+
+        # 3) Global — with delay
+        await asyncio.sleep(1.5)
+        try:
+            resp = await client.get(f"{COINGECKO_BASE_URL}/global")
+            if resp.status_code == 200:
+                gdata = resp.json().get("data", {})
+                result["btc_dominance"] = gdata.get("market_cap_percentage", {}).get("btc")
+        except Exception:
+            pass
+
+    result["timestamp"] = datetime.now(timezone.utc).isoformat()
+    return result
 
 
 @app.get("/prices")
