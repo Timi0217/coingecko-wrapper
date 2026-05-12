@@ -117,13 +117,13 @@ hr.dv2{border:none;border-top:1px solid rgba(255,255,255,.06);margin:18px 0}
  <div id="res"></div>
 </div>
 <script>
-const COINS={BTC:{name:'Bitcoin',bg:'#F7931A',icon:'\\u20BF'},ETH:{name:'Ethereum',bg:'#627EEA',icon:'\\u039E'},SOL:{name:'Solana',bg:'#00D18C',icon:'\\u25CE'},DOGE:{name:'Dogecoin',bg:'#C2A633',icon:'D'}};
+const COINS={BTC:{name:'Bitcoin',bg:'#F7931A',icon:'\u20BF'},ETH:{name:'Ethereum',bg:'#627EEA',icon:'\u039E'},SOL:{name:'Solana',bg:'#00D18C',icon:'\u25CE'},DOGE:{name:'Dogecoin',bg:'#C2A633',icon:'D'}};
 function fmt(n){if(n==null)return'--';if(n>=1e9)return'$'+(n/1e9).toFixed(2)+'B';if(n>=1e6)return'$'+(n/1e6).toFixed(2)+'M';if(n>=1)return'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});return'$'+n.toFixed(4)}
-function chg(v){if(v==null)return'<span class="ld">--</span>';const c=v>=0?'up':'dn';const a=v>=0?'\\u25B2':'\\u25BC';return'<span class="ch '+c+'">'+a+' '+Math.abs(v).toFixed(1)+'%</span>'}
+function chg(v){if(v==null)return'<span class="ld">--</span>';const c=v>=0?'up':'dn';const a=v>=0?'\u25B2':'\u25BC';return'<span class="ch '+c+'">'+a+' '+Math.abs(v).toFixed(1)+'%</span>'}
 async function init(){
  const t0=Date.now();
  // Health
- try{await fetch('/health');const ms=Date.now()-t0;document.getElementById('dot').classList.add('on');document.getElementById('stx').textContent='online \\u00B7 '+ms+'ms'}catch(e){document.getElementById('stx').textContent='offline'}
+ try{await fetch('/health');const ms=Date.now()-t0;document.getElementById('dot').classList.add('on');document.getElementById('stx').textContent='online \u00B7 '+ms+'ms'}catch(e){document.getElementById('stx').textContent='offline'}
  // All homepage data in one server-side call
  const grid=document.getElementById('grid');
  const syms=Object.keys(COINS);
@@ -144,7 +144,7 @@ async function fetchP(){
  const s=document.getElementById('sym').value.trim().toUpperCase();if(!s)return;
  const res=document.getElementById('res');res.style.display='block';res.innerHTML='<span class="ld">Fetching '+s+'...</span>';
  try{const d=await fetch('/price?symbol='+s).then(r=>{if(!r.ok)throw new Error(r.status);return r.json()});
-  const ch=d.change_24h_pct;const cls=ch>=0?'up':'dn';const arrow=ch>=0?'\\u25B2':'\\u25BC';
+  const ch=d.change_24h_pct;const cls=ch>=0?'up':'dn';const arrow=ch>=0?'\u25B2':'\u25BC';
   res.innerHTML='<strong>'+d.symbol+'</strong> '+fmt(d.price)+' <span class="'+cls+'">'+arrow+' '+Math.abs(ch||0).toFixed(2)+'%</span><br><span style="color:#666">Market cap: '+fmt(d.market_cap)+'&ensp;|&ensp;24h vol: '+fmt(d.volume_24h)+'</span>'}
  catch(e){res.innerHTML='<span class="dn">Error fetching '+s+'</span>'}
 }
